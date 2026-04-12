@@ -28,9 +28,10 @@ app = FastAPI(title="Study Planner API", version="1.0.0")
 # IMPORTANTE: allow_origins=["*"] es incompatible con allow_credentials=True
 # según la especificación CORS. Se deben listar los orígenes explícitamente.
 origins = [
-    "http://localhost:5173",   # Vite dev server
-    "http://localhost:3000",   # React dev server alternativo
-    "https://planificador-estudio-app-frontend.vercel.app",  # Producción Vercel
+    "http://localhost:5173",                                  # Vite dev server
+    "http://localhost:3000",                                  # React dev server alternativo
+    "https://planificador-personal-front.vercel.app",        # Producción Vercel (actual)
+    "https://planificador-estudio-app-frontend.vercel.app",  # Producción Vercel (anterior)
 ]
 
 app.add_middleware(
