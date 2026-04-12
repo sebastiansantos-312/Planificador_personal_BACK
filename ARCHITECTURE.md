@@ -40,6 +40,8 @@ Cliente (Frontend React)
 │    main.py       │  FastAPI recibe la petición
 │  (CORS Middleware)│  Verifica el origen — orígenes permitidos:
 │                  │    localhost:5173, localhost:3000
+│                  │    planificador-personal-front.vercel.app
+│                  │    planificador-estudio-app-frontend.vercel.app
 └────────┬─────────┘
          │  Redirige al router correspondiente
          ▼
@@ -187,8 +189,8 @@ Task (1) ──< Subtask (N)
 |--------|------|-------------|
 | `POST` | `/subtasks/` | Crear paso |
 | `GET` | `/subtasks/task/{task_id}` | Listar pasos de una tarea |
-| `GET` | `/subtasks/daily-overload` | Detectar días con exceso al cambiar el límite global |
-| `GET` | `/subtasks/week-summary` | **[Sprint 3]** Resumen de disponibilidad por día en un rango de fechas |
+| `GET` | `/subtasks/daily-overload?user_id=...&limit_minutes=...` | Detectar días con exceso al cambiar el límite global |
+| `GET` | `/subtasks/week-summary?user_id=...&from_date=...&to_date=...` | **[Sprint 3]** Resumen de disponibilidad por día en un rango de fechas |
 | `POST` | `/subtasks/{id}/check-conflict` | **[Sprint 3]** Verificar sobrecarga diaria al reprogramar un paso |
 | `PATCH` | `/subtasks/{id}/status` | Actualizar solo el estado del paso |
 | `GET` | `/subtasks/{id}` | Obtener paso por UUID |
