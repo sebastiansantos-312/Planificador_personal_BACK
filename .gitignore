@@ -1,4 +1,37 @@
-.env 
-__pycache__/ 
-venv/ 
-*.pyc 
+# ── Secretos y variables de entorno ──────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Entorno virtual Python ────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Caché Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Distribución / builds ─────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+
+# ── Testing y cobertura ───────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── IDEs y editores ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+
+# ── Sistema operativo ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
