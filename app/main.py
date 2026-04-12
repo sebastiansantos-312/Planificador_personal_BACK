@@ -6,10 +6,9 @@ para permitir peticiones desde el frontend (Vercel), y registra todos los
 routers de la aplicación.
 
 Flujo de arranque:
-  1. Se crean las tablas en la base de datos si no existen.
-  2. Se instancia la aplicación FastAPI.
-  3. Se configura CORS para aceptar peticiones de cualquier origen.
-  4. Se registran los routers: auth, users, subjects, tasks, subtasks.
+  1. Se instancia la aplicación FastAPI con CORS configurado.
+  2. Se crean las tablas en la base de datos si no existen.
+  3. Se registran los routers: auth, users, subjects, tasks, subtasks.
 """
 
 from fastapi import FastAPI
@@ -18,15 +17,11 @@ from .database import Base, engine
 from . import models
 from .routes import tasks, users, subjects, subtasks, auth
 
-# 1. Crear tablas en la BD a partir de los modelos SQLAlchemy
-Base.metadata.create_all(bind=engine)
-
-# 2. Instanciar la aplicación
+# 1. Instanciar la aplicación PRIMERO para que CORS esté activo desde el inicio
 app = FastAPI(title="Study Planner API", version="1.0.0")
 
-# 3. Configurar CORS
-# IMPORTANTE: allow_origins=["*"] es incompatible con allow_credentials=True
-# según la especificación CORS. Se deben listar los orígenes explícitamente.
+# 2. Configurar CORS — debe registrarse ANTES que los routers
+# Lista de orígenes permitidos (include_credentials=True requiere lista explícita, no "*")
 origins = [
     "http://localhost:5173",                                  # Vite dev server
     "http://localhost:3000",                                  # React dev server alternativo
@@ -38,9 +33,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# 3. Crear tablas en la BD a partir de los modelos SQLAlchemy
+Base.metadata.create_all(bind=engine)
 
 # 4. Registrar routers — cada uno agrupa los endpoints de su dominio
 app.include_router(auth.router)       # POST /auth/login
