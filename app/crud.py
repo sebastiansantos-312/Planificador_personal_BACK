@@ -17,9 +17,9 @@ Organización:
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from . import models, schemas
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID
-from typing import Optional
+from typing import Optional, List
 from fastapi import HTTPException
 
 
@@ -804,19 +804,156 @@ def get_today_view_by_email(db: Session, user_email: str):
 
 # ─── CONFLICTO DE SOBRECARGA PARA TAREAS — US-07 ─────────────────────────────
 
+
+def _get_day_used_minutes(
+    db: Session,
+    user_id: UUID,
+    day: date,
+    exclude_task_id: Optional[UUID] = None,
+) -> int:
+    """
+    Calcula el total de minutos planificados en un día:
+    sumando duration_minutes de tareas (por due_date, excluyendo done) y
+    estimated_minutes de subtareas (por target_date, excluyendo done).
+    Opcionalmente excluye una tarea específica del conteo.
+    """
+    task_q = (
+        db.query(func.sum(models.Task.duration_minutes))
+        .filter(models.Task.user_id == user_id)
+        .filter(models.Task.due_date == day)
+        .filter(models.Task.duration_minutes != None)
+        .filter(models.Task.status != "done")
+    )
+    if exclude_task_id:
+        task_q = task_q.filter(models.Task.id != exclude_task_id)
+    task_mins = task_q.scalar() or 0
+
+    sub_mins = (
+        db.query(func.sum(models.Subtask.estimated_minutes))
+        .join(models.Task, models.Subtask.task_id == models.Task.id)
+        .filter(models.Task.user_id == user_id)
+        .filter(models.Subtask.target_date == day)
+        .filter(models.Subtask.status != "done")
+        .scalar() or 0
+    )
+    return task_mins + sub_mins
+
+
+PRIORITY_ORDER = {"alta": 3, "media": 2, "baja": 1}
+
+
+def _get_alternative_days(
+    db: Session,
+    user_id: UUID,
+    from_date: date,
+    needed_minutes: int,
+    daily_limit: int,
+    exclude_task_id: Optional[UUID] = None,
+    max_days: int = 7,
+    max_results: int = 2,
+) -> List[dict]:
+    """
+    Busca los próximos días (a partir de from_date, máximo max_days)
+    donde hay espacio suficiente para needed_minutes.
+    Retorna hasta max_results días disponibles.
+    """
+    results = []
+    check_date = from_date
+    days_checked = 0
+
+    while days_checked < max_days and len(results) < max_results:
+        used = _get_day_used_minutes(db, user_id, check_date, exclude_task_id)
+        available = daily_limit - used
+        if available >= needed_minutes:
+            results.append({
+                "date": check_date.isoformat(),
+                "available_minutes": available,
+                "available_hours": round(available / 60, 1),
+            })
+        check_date += timedelta(days=1)
+        days_checked += 1
+
+    return results
+
+
+def _get_displaceable_tasks(
+    db: Session,
+    user_id: UUID,
+    conflict_date: date,
+    new_task_priority: Optional[str],
+    daily_limit: int,
+    exclude_task_id: Optional[UUID] = None,
+    max_results: int = 2,
+) -> List[dict]:
+    """
+    Busca tareas del día conflictivo con prioridad menor a la nueva tarea,
+    y para cada una calcula si cabría en el siguiente día disponible.
+
+    Jerarquía: alta > media > baja.
+    Si la nueva es 'baja' no hay candidatas.
+    """
+    new_rank = PRIORITY_ORDER.get(new_task_priority or "baja", 1)
+    if new_rank <= 1:
+        return []  # ya es la más baja, nada que desplazar
+
+    # Tareas del mismo día con menor prioridad (sin excluir la tarea en edición)
+    tasks_that_day = (
+        db.query(models.Task)
+        .filter(models.Task.user_id == user_id)
+        .filter(models.Task.due_date == conflict_date)
+        .filter(models.Task.status != "done")
+        .filter(models.Task.duration_minutes != None)
+        .all()
+    )
+    if exclude_task_id:
+        tasks_that_day = [t for t in tasks_that_day if t.id != exclude_task_id]
+
+    candidates = [
+        t for t in tasks_that_day
+        if PRIORITY_ORDER.get(t.priority or "baja", 1) < new_rank
+    ]
+    # Ordenar: menor prioridad primero (más candidatas a mover)
+    candidates.sort(key=lambda t: PRIORITY_ORDER.get(t.priority or "baja", 1))
+
+    results = []
+    for task in candidates:
+        if len(results) >= max_results:
+            break
+        dur = task.duration_minutes or 0
+        # Buscar primer día disponible a partir de conflict_date + 1
+        alt_days = _get_alternative_days(
+            db, user_id,
+            from_date=conflict_date + timedelta(days=1),
+            needed_minutes=dur,
+            daily_limit=daily_limit,
+            max_days=7,
+            max_results=1,
+        )
+        suggested_date = alt_days[0]["date"] if alt_days else None
+        results.append({
+            "task_id": str(task.id),
+            "title": task.title,
+            "priority": task.priority,
+            "duration_minutes": dur,
+            "suggested_new_date": suggested_date,
+        })
+
+    return results
+
+
 def check_task_overload_conflict(
     db: Session,
     user_id: UUID,
     target_date: date,
     new_duration_minutes: int,
     exclude_task_id: Optional[UUID] = None,
+    new_task_priority: Optional[str] = None,
 ):
     """
-    Verifica si agregar/mover una tarea a un día genera sobrecarga (US-07).
-
-    Suma los minutos de todas las tareas (duration_minutes, por due_date)
-    y de todas las subtareas (estimated_minutes, por target_date) del usuario
-    para el día dado, y evalúa si supera el límite diario configurado.
+    Verifica si agregar/mover una tarea a un día genera sobrecarga (US-07),
+    y de ser así calcula recomendaciones inteligentes:
+      - Días alternativos con espacio suficiente (próximos 7 días).
+      - Tareas del día conflictivo con menor prioridad candidatas a mover.
 
     Args:
         db (Session): Sesión activa de SQLAlchemy.
@@ -825,39 +962,52 @@ def check_task_overload_conflict(
         new_duration_minutes (int): Minutos de la nueva tarea / cambio a agregar.
         exclude_task_id (UUID, optional): UUID de la tarea a excluir del conteo
             (para no contarse a sí misma al editar).
+        new_task_priority (str, optional): Prioridad de la nueva tarea
+            ('alta' | 'media' | 'baja'). Necesario para calcular candidatas.
 
     Returns:
-        dict: { has_conflict, current_minutes, new_total_minutes,
-                limit_minutes, current_hours, new_total_hours,
-                limit_hours, message }
+        dict: {
+            has_conflict, current_minutes, new_total_minutes,
+            limit_minutes, current_hours, new_total_hours,
+            limit_hours, message,
+            recommendations: {
+                alternative_days: list[dict],
+                displaceable_tasks: list[dict]
+            } | None
+        }
     """
     user = get_user(db, user_id)
     daily_limit_minutes = user.daily_limit_minutes or 360
 
-    # Suma de duration_minutes de otras tareas con ese due_date
-    task_query = (
-        db.query(func.sum(models.Task.duration_minutes))
-        .filter(models.Task.user_id == user_id)
-        .filter(models.Task.due_date == target_date)
-        .filter(models.Task.duration_minutes != None)
-    )
-    if exclude_task_id:
-        task_query = task_query.filter(models.Task.id != exclude_task_id)
-    task_minutes = task_query.scalar() or 0
-
-    # Suma de estimated_minutes de subtareas con ese target_date
-    sub_query = (
-        db.query(func.sum(models.Subtask.estimated_minutes))
-        .join(models.Task, models.Subtask.task_id == models.Task.id)
-        .filter(models.Task.user_id == user_id)
-        .filter(models.Subtask.target_date == target_date)
-        .filter(models.Subtask.status != "done")
-    )
-    sub_minutes = sub_query.scalar() or 0
-
-    current_total = task_minutes + sub_minutes
+    current_total = _get_day_used_minutes(db, user_id, target_date, exclude_task_id)
     new_total = current_total + new_duration_minutes
     has_conflict = new_total > daily_limit_minutes
+
+    recommendations = None
+    if has_conflict:
+        alternative_days = _get_alternative_days(
+            db=db,
+            user_id=user_id,
+            from_date=target_date + timedelta(days=1),
+            needed_minutes=new_duration_minutes,
+            daily_limit=daily_limit_minutes,
+            exclude_task_id=exclude_task_id,
+            max_days=7,
+            max_results=2,
+        )
+        displaceable_tasks = _get_displaceable_tasks(
+            db=db,
+            user_id=user_id,
+            conflict_date=target_date,
+            new_task_priority=new_task_priority,
+            daily_limit=daily_limit_minutes,
+            exclude_task_id=exclude_task_id,
+            max_results=2,
+        )
+        recommendations = {
+            "alternative_days": alternative_days,
+            "displaceable_tasks": displaceable_tasks,
+        }
 
     return {
         "has_conflict": has_conflict,
@@ -868,8 +1018,188 @@ def check_task_overload_conflict(
         "new_total_hours": round(new_total / 60, 1),
         "limit_hours": round(daily_limit_minutes / 60, 1),
         "message": (
-            f"Quedarías con {round(new_total/60, 1)}h planificadas "
-            f"(límite {round(daily_limit_minutes/60, 1)}h)"
+            f"El día {target_date.isoformat()} ya está al límite de {round(daily_limit_minutes/60, 1)}h."
             if has_conflict else "Sin conflicto"
         ),
+        "recommendations": recommendations,
+    }
+
+
+# ─── PREVIEW DE CAMBIO DE LÍMITE DIARIO ──────────────────────────────────────
+
+def preview_limit_change(db: Session, user_id: UUID, new_limit_minutes: int):
+    """
+    Calcula el impacto de reducir el límite diario al valor propuesto.
+
+    Para cada día futuro (>= hoy) que quedaría en sobrecarga, calcula:
+      - Las tareas del día (por due_date, status != done).
+      - auto_suggestion: mover las tareas de menor prioridad hasta ajustarse.
+      - alternative_combinations: hasta 3 combinaciones que resuelven el exceso.
+      - compress_option: indica que se pueden reducir duraciones.
+      - distribute_option: lista días disponibles hacia donde redistribuir.
+
+    Solo usa tasks.duration_minutes por due_date (no subtareas).
+
+    Args:
+        db (Session): Sesión activa de SQLAlchemy.
+        user_id (UUID): UUID del usuario.
+        new_limit_minutes (int): Nuevo límite propuesto en minutos.
+
+    Returns:
+        dict: { new_limit_minutes, affected_days: list[AffectedDay] }
+    """
+    today = date.today()
+
+    # ── Obtener todas las tareas del usuario desde hoy, pendientes ──────────
+    tasks_from_today = (
+        db.query(models.Task)
+        .filter(models.Task.user_id == user_id)
+        .filter(models.Task.due_date >= today)
+        .filter(models.Task.status != "done")
+        .filter(models.Task.duration_minutes != None)
+        .filter(models.Task.duration_minutes > 0)
+        .all()
+    )
+
+    # ── Agrupar por día ───────────────────────────────────────────────────────
+    from collections import defaultdict
+    day_tasks: dict = defaultdict(list)
+    for t in tasks_from_today:
+        day_tasks[t.due_date].append(t)
+
+    # ── Para cada día con total > new_limit, calcular recomendaciones ────────
+    affected_days = []
+
+    for day, tasks in sorted(day_tasks.items()):
+        total_mins = sum(t.duration_minutes for t in tasks)
+        if total_mins <= new_limit_minutes:
+            continue  # Sin sobrecarga en ese día
+
+        overflow = total_mins - new_limit_minutes
+        task_list = [
+            {
+                "task_id": str(t.id),
+                "title": t.title,
+                "priority": t.priority or "baja",
+                "duration_minutes": t.duration_minutes,
+                "duration_hours": round(t.duration_minutes / 60, 1),
+            }
+            for t in tasks
+        ]
+
+        # ── auto_suggestion: mover de menor a mayor prioridad hasta ajustar ──
+        prio_rank = {"baja": 0, "media": 1, "alta": 2}
+        sorted_by_prio = sorted(
+            tasks,
+            key=lambda t: (prio_rank.get(t.priority or "baja", 0), -t.duration_minutes),
+        )
+
+        def find_suggested_date(task_obj, from_day, new_lim) -> str | None:
+            """Busca primer día (from_day+1 .. +7) con espacio para task_obj.duration_minutes."""
+            needed = task_obj.duration_minutes
+            for offset in range(1, 8):
+                candidate = from_day + timedelta(days=offset)
+                used = sum(
+                    t.duration_minutes for t in day_tasks.get(candidate, [])
+                    if t.id != task_obj.id
+                )
+                if (new_lim - used) >= needed:
+                    return candidate.isoformat()
+            return None
+
+        auto_tasks_to_move = []
+        running_total = total_mins
+        for t in sorted_by_prio:
+            if running_total <= new_limit_minutes:
+                break
+            suggested = find_suggested_date(t, day, new_limit_minutes)
+            auto_tasks_to_move.append({
+                "task_id": str(t.id),
+                "title": t.title,
+                "priority": t.priority or "baja",
+                "duration_minutes": t.duration_minutes,
+                "suggested_date": suggested,
+            })
+            running_total -= t.duration_minutes
+
+        auto_suggestion = {
+            "description": (
+                f"Mover {len(auto_tasks_to_move)} tarea(s) libera el día a "
+                f"{round(max(0, total_mins - sum(x['duration_minutes'] for x in auto_tasks_to_move)) / 60, 1)}h."
+            ),
+            "tasks_to_move": auto_tasks_to_move,
+            "result_minutes": max(0, total_mins - sum(x["duration_minutes"] for x in auto_tasks_to_move)),
+        }
+
+        # ── alternative_combinations: hasta 3 subsets que resuelven exceso ───
+        from itertools import combinations as _combinations
+
+        def resolves(subset, total, limit) -> bool:
+            return (total - sum(t.duration_minutes for t in subset)) <= limit
+
+        alt_combos = []
+        # Buscar desde subsets más pequeños (menos impacto)
+        for size in range(1, len(tasks) + 1):
+            if len(alt_combos) >= 3:
+                break
+            for combo in _combinations(sorted_by_prio, size):
+                if len(alt_combos) >= 3:
+                    break
+                if resolves(combo, total_mins, new_limit_minutes):
+                    combo_tasks = [
+                        {
+                            "task_id": str(t.id),
+                            "title": t.title,
+                            "priority": t.priority or "baja",
+                            "duration_minutes": t.duration_minutes,
+                            "suggested_date": find_suggested_date(t, day, new_limit_minutes),
+                        }
+                        for t in combo
+                    ]
+                    result_mins = total_mins - sum(t.duration_minutes for t in combo)
+                    titles = ", ".join(f"'{x['title']}'" for x in combo_tasks)
+                    alt_combos.append({
+                        "label": f"Mover {titles}",
+                        "tasks_to_move": combo_tasks,
+                        "result_minutes": result_mins,
+                    })
+
+        # ── distribute_option: días con espacio en los próximos 7 días ───────
+        distribute_days = []
+        for offset in range(1, 8):
+            candidate = day + timedelta(days=offset)
+            used = sum(t.duration_minutes for t in day_tasks.get(candidate, []))
+            avail = new_limit_minutes - used
+            if avail > 0:
+                distribute_days.append({
+                    "date": candidate.isoformat(),
+                    "available_minutes": avail,
+                    "available_hours": round(avail / 60, 1),
+                })
+
+        affected_days.append({
+            "date": day.isoformat(),
+            "total_minutes": total_mins,
+            "total_hours": round(total_mins / 60, 1),
+            "overflow_minutes": overflow,
+            "overflow_hours": round(overflow / 60, 1),
+            "tasks": task_list,
+            "recommendations": {
+                "auto_suggestion": auto_suggestion,
+                "alternative_combinations": alt_combos,
+                "compress_option": {
+                    "description": "Reducir duraciones de las tareas de ese día para ajustar al nuevo límite.",
+                    "available": True,
+                },
+                "distribute_option": {
+                    "description": "Repartir tareas sobrantes entre los próximos días con espacio disponible.",
+                    "days_available": distribute_days,
+                },
+            },
+        })
+
+    return {
+        "new_limit_minutes": new_limit_minutes,
+        "new_limit_hours": round(new_limit_minutes / 60, 1),
+        "affected_days": affected_days,
     }

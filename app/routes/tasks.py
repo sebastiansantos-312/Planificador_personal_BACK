@@ -131,6 +131,7 @@ def check_task_conflict(
     due_date: str,
     duration_minutes: int,
     user_id: UUID,
+    priority: str = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -139,6 +140,7 @@ def check_task_conflict(
     Suma los minutos de las demás tareas con ese due_date y subtareas con ese
     target_date, y evalúa si agregar esta tarea genera sobrecarga.
     La tarea con task_id se excluye del conteo (para soportar edición).
+    Si hay conflicto, retorna también recomendaciones inteligentes.
 
     Args:
         task_id (UUID): UUID de la tarea evaluada (se excluye del conteo al editar).
@@ -146,12 +148,14 @@ def check_task_conflict(
         due_date (str): Fecha límite en formato ISO (YYYY-MM-DD).
         duration_minutes (int): Duración de la tarea en minutos.
         user_id (UUID): UUID del usuario propietario.
+        priority (str, optional): Prioridad de la tarea ('alta' | 'media' | 'baja').
+                                   Requerido para calcular tareas desplazables.
         db (Session): Sesión de BD inyectada.
 
     Returns:
         dict: { has_conflict, current_minutes, new_total_minutes,
                 limit_minutes, current_hours, new_total_hours,
-                limit_hours, message }
+                limit_hours, message, recommendations }
     """
     from datetime import date as date_type
     parsed_date = date_type.fromisoformat(due_date)
@@ -161,6 +165,7 @@ def check_task_conflict(
         target_date=parsed_date,
         new_duration_minutes=duration_minutes,
         exclude_task_id=task_id,
+        new_task_priority=priority,
     )
 
 

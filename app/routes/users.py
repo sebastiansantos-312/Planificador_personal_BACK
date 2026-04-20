@@ -77,6 +77,28 @@ def get_config(user_id: UUID, db: Session = Depends(get_db)):
     return {"daily_limit_minutes": user.daily_limit_minutes or 360}
 
 
+@router.post("/{user_id}/config/preview")
+def preview_config(user_id: UUID, new_limit_minutes: int, db: Session = Depends(get_db)):
+    """
+    Calcula el impacto de reducir el límite diario al valor propuesto.
+
+    No guarda nada — solo retorna el análisis de días afectados con
+    recomendaciones inteligentes (auto_suggestion, combinaciones, distribuir).
+
+    Args:
+        user_id (UUID): UUID del usuario en la ruta.
+        new_limit_minutes (int): Nuevo límite propuesto en minutos.
+        db (Session): Sesión de BD inyectada.
+
+    Returns:
+        dict: {
+            new_limit_minutes, new_limit_hours,
+            affected_days: list[AffectedDay con tasks y recommendations]
+        }
+    """
+    return crud.preview_limit_change(db, user_id, new_limit_minutes)
+
+
 @router.patch("/{user_id}/config")
 def update_config(user_id: UUID, daily_limit_minutes: int, db: Session = Depends(get_db)):
     """

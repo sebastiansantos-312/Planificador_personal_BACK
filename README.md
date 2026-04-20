@@ -114,14 +114,6 @@ uvicorn app.main:app --reload --port 8000
 
 ---
 
-## 🌍 Variables de entorno
-
-Crear un archivo `.env` en la raíz del proyecto:
-
-```env
-DATABASE_URL=postgresql://usuario:password@host:puerto/nombre_db
-SECRET_KEY=tu_clave_secreta_aqui
-```
 
 | Variable | Descripción | Requerida |
 |----------|-------------|-----------|
