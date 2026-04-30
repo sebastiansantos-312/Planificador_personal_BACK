@@ -802,6 +802,66 @@ def get_today_view_by_email(db: Session, user_email: str):
     return get_today_view(db, user.id)
 
 
+def get_global_progress_by_email(db: Session, user_email: str):
+    """
+    Calcula el progreso global real del usuario basado en subtareas (C2 — US-10).
+
+    A diferencia de contar tareas por status, esto cuenta cada subtarea individual,
+    lo que refleja el avance real dentro de cada actividad.
+
+    Args:
+        db (Session): Sesión activa de SQLAlchemy.
+        user_email (str): Email del usuario.
+
+    Returns:
+        dict: {
+            total_subtasks, done, postponed, pending,
+            percent, tasks_total, tasks_done, tasks_postponed, 
+            tasks_pending, tasks_percent
+        }
+
+    Raises:
+        HTTPException 404: Si no existe el usuario.
+    """
+    user = get_user_by_email(db, user_email)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"No existe usuario con email: {user_email}")
+
+    subtasks = (
+        db.query(models.Subtask)
+        .join(models.Task, models.Subtask.task_id == models.Task.id)
+        .filter(models.Task.user_id == user.id)
+        .all()
+    )
+
+    total = len(subtasks)
+    done = sum(1 for s in subtasks if s.status == "done")
+    postponed = sum(1 for s in subtasks if s.status == "postponed")
+    pending = sum(1 for s in subtasks if s.status == "pending")
+
+    # Progreso de tareas — desglose completo por estado
+    tasks = db.query(models.Task).filter(models.Task.user_id == user.id).all()
+    tasks_total = len(tasks)
+    tasks_done = sum(1 for t in tasks if t.status == "done")
+    tasks_postponed = sum(1 for t in tasks if t.status == "postponed")
+    tasks_pending = sum(1 for t in tasks if t.status in ("pending", "in_progress"))
+
+    return {
+        # Subtareas — desglose interno de pasos
+        "total_subtasks": total,
+        "done": done,
+        "postponed": postponed,
+        "pending": pending,
+        "percent": round((done / total) * 100) if total > 0 else 0,
+        # Actividades — métricas principales para ProgresoPage
+        "tasks_total": tasks_total,
+        "tasks_done": tasks_done,
+        "tasks_postponed": tasks_postponed,
+        "tasks_pending": tasks_pending,
+        "tasks_percent": round((tasks_done / tasks_total) * 100) if tasks_total > 0 else 0,
+    }
+
+
 # ─── CONFLICTO DE SOBRECARGA PARA TAREAS — US-07 ─────────────────────────────
 
 

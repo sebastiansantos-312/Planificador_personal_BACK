@@ -112,7 +112,7 @@ Authorization: Bearer <token>
 
 ## 🗄️ Base de Datos
 
-> **Archivo:** `app/database.py` · `app/models.py`
+> **Archivo:** `app/database.py` · `app/models.py` · ver esquema completo en [`DATABASE.md`](./DATABASE.md)
 
 ### Modelos ORM (tablas)
 
@@ -120,8 +120,16 @@ Authorization: Bearer <token>
 |--------|-------|-------------|
 | `User` | `users` | `id` (UUID PK), `email` (único), `password` (bcrypt), `first_name`, `last_name`, `birth_date`, `daily_limit_minutes` (default 360) |
 | `Subject` | `subjects` | `id` (UUID PK), `name`, `color`, `user_id` → users (CASCADE DELETE) |
-| `Task` | `tasks` | `id` (UUID PK), `title`, `task_type`, `subject_id` (nullable), `user_id`, `due_date`, `duration_minutes`, `priority`, `status` |
-| `Subtask` | `subtasks` | `id` (UUID PK), `task_id` → tasks (CASCADE DELETE), `title`, `description`, `target_date`, `estimated_minutes`, `status`, `postpone_note` |
+| `Task` | `tasks` | `id` (UUID PK), `title`, `task_type`, `subject_id` (nullable), `user_id`, `due_date`, `duration_minutes`, `priority`, `status` ✱, `postpone_note` |
+| `Subtask` | `subtasks` | `id` (UUID PK), `task_id` → tasks (CASCADE DELETE), `title`, `description`, `target_date`, `estimated_minutes`, `status` ✱, `postpone_note` |
+
+✱ **Status validado en dos capas:**
+- **BD:** constraint `CHECK` en Supabase rechaza valores inválidos a nivel SQL.
+- **API:** Pydantic `Literal` en `schemas.py` retorna 422 antes de tocar la BD.
+
+**Status válidos por tabla:**
+- `tasks.status`: `pending` · `in_progress` · `done` · `postponed`
+- `subtasks.status`: `pending` · `done` · `postponed`
 
 **Relaciones:**
 ```
@@ -130,7 +138,7 @@ User (1) ──< Task    (N)
 Task (1) ──< Subtask (N)
 ```
 
-**Cascadas:** al eliminar un `User` se eliminan sus `Subject` y `Task`. Al eliminar una `Task` se eliminan sus `Subtask`.
+**Cascadas:** al eliminar un `User` se eliminan sus `Subject` y `Task`. Al eliminar una `Task` se eliminan sus `Subtask`. Al borrar una `Subject` el `subject_id` de las tareas queda en NULL.
 
 ---
 

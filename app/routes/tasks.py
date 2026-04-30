@@ -125,6 +125,48 @@ def get_today(user_email: str = None, user_id: UUID = None, db: Session = Depend
     raise HTTPException(status_code=400, detail="Debes enviar user_email o user_id")
 
 
+@router.get("/progreso-global")
+def get_global_progress(user_email: str, db: Session = Depends(get_db)):
+    """
+    C2 (US-10): Progreso global del usuario — actividades y subtareas.
+
+    Devuelve métricas de dos niveles:
+      - Actividades (tasks): métricas principales para ProgresoPage.
+      - Subtareas: desglose interno de los pasos dentro de cada actividad.
+
+    El porcentaje y contadores de actividades (tasks_percent, tasks_done, etc.)
+    son consistentes con los estados reales en BD.
+
+    Args:
+        user_email (str): Email del usuario (query param).
+
+    Returns:
+        dict: {
+            tasks_total, tasks_done, tasks_postponed, tasks_pending,
+            tasks_percent,
+            total_subtasks, done, postponed, pending, percent
+        }
+
+    Example response:
+        {
+            "tasks_total": 4,
+            "tasks_done": 1,
+            "tasks_postponed": 1,
+            "tasks_pending": 2,
+            "tasks_percent": 25,
+            "total_subtasks": 12,
+            "done": 5,
+            "postponed": 2,
+            "pending": 5,
+            "percent": 42
+        }
+
+    Raises:
+        HTTPException 404: Si no existe usuario con ese email.
+    """
+    return crud.get_global_progress_by_email(db, user_email)
+
+
 @router.post("/{task_id}/check-conflict")
 def check_task_conflict(
     task_id: UUID,

@@ -2,7 +2,7 @@
 models.py — Modelos ORM que representan las tablas de la base de datos.
 """
 
-from sqlalchemy import Column, String, Integer, Date, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Date, ForeignKey, Text, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.types import TIMESTAMP
@@ -46,7 +46,15 @@ class Task(Base):
     duration_minutes = Column(Integer)
     priority = Column(String)
     status = Column(String)
+    postpone_note = Column(Text)                                  # ← Sprint 4
     created_at = Column(TIMESTAMP, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'done', 'postponed')",
+            name="chk_task_status"
+        ),
+    )
 
 
 class Subtask(Base):
@@ -61,3 +69,10 @@ class Subtask(Base):
     status = Column(String)
     postpone_note = Column(Text)
     created_at = Column(TIMESTAMP, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'done', 'postponed')",
+            name="chk_subtask_status"
+        ),
+    )

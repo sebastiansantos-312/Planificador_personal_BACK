@@ -5,7 +5,7 @@ schemas.py — Esquemas Pydantic para validación y serialización de datos.
 from pydantic import BaseModel
 from datetime import date, datetime
 from uuid import UUID
-from typing import Optional
+from typing import Optional, Literal
 
 
 # ─── USER ────────────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ class TaskCreate(BaseModel):
     due_date: Optional[date] = None
     duration_minutes: Optional[int] = None
     priority: Optional[str] = None
-    status: Optional[str] = "pending"
+    status: Optional[Literal["pending", "in_progress", "done", "postponed"]] = "pending"
 
 
 class TaskUpdate(BaseModel):
@@ -88,7 +88,8 @@ class TaskUpdate(BaseModel):
     due_date: Optional[date] = None
     duration_minutes: Optional[int] = None
     priority: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[Literal["pending", "in_progress", "done", "postponed"]] = None
+    postpone_note: Optional[str] = None                          # ← Sprint 4
 
 
 class Task(BaseModel):
@@ -102,6 +103,7 @@ class Task(BaseModel):
     duration_minutes: Optional[int] = None
     priority: Optional[str] = None
     status: Optional[str] = None
+    postpone_note: Optional[str] = None                          # ← Sprint 4
     created_at: Optional[datetime] = None
 
     class Config:
@@ -116,7 +118,7 @@ class SubtaskCreate(BaseModel):
     description: Optional[str] = None
     target_date: Optional[date] = None
     estimated_minutes: Optional[int] = None
-    status: Optional[str] = "pending"
+    status: Optional[Literal["pending", "done", "postponed"]] = "pending"
 
 
 class SubtaskUpdate(BaseModel):
@@ -124,7 +126,7 @@ class SubtaskUpdate(BaseModel):
     description: Optional[str] = None
     target_date: Optional[date] = None
     estimated_minutes: Optional[int] = None
-    status: Optional[str] = None
+    status: Optional[Literal["pending", "done", "postponed"]] = None
     postpone_note: Optional[str] = None
 
 
@@ -163,4 +165,4 @@ class TaskCreateByEmail(BaseModel):
     due_date: Optional[date] = None
     duration_minutes: Optional[int] = None
     priority: Optional[str] = None
-    status: Optional[str] = "pending"
+    status: Optional[Literal["pending", "in_progress", "done", "postponed"]] = "pending"
