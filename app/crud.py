@@ -105,7 +105,7 @@ def update_user(db: Session, user_id: UUID, user: schemas.UserUpdate):
         models.User: Usuario actualizado.
     """
     db_user = get_user(db, user_id)
-    for key, value in user.dict(exclude_unset=True).items():
+    for key, value in user.model_dump(exclude_unset=True).items():
         setattr(db_user, key, value)
     db.commit()
     db.refresh(db_user)
@@ -142,7 +142,7 @@ def create_subject(db: Session, subject: schemas.SubjectCreate):
     Returns:
         models.Subject: Materia creada.
     """
-    db_subject = models.Subject(**subject.dict())
+    db_subject = models.Subject(**subject.model_dump())
     db.add(db_subject)
     db.commit()
     db.refresh(db_subject)
@@ -196,7 +196,7 @@ def update_subject(db: Session, subject_id: UUID, subject: schemas.SubjectUpdate
         models.Subject: Materia actualizada.
     """
     db_subject = get_subject(db, subject_id)
-    for key, value in subject.dict(exclude_unset=True).items():
+    for key, value in subject.model_dump(exclude_unset=True).items():
         setattr(db_subject, key, value)
     db.commit()
     db.refresh(db_subject)
@@ -238,7 +238,7 @@ def create_task(db: Session, task: schemas.TaskCreate):
     Returns:
         models.Task: Tarea creada con su UUID asignado.
     """
-    db_task = models.Task(**task.dict())
+    db_task = models.Task(**task.model_dump())
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
@@ -295,7 +295,7 @@ def update_task(db: Session, task_id: UUID, task: schemas.TaskUpdate):
         models.Task: Tarea actualizada.
     """
     db_task = get_task(db, task_id)
-    for key, value in task.dict(exclude_unset=True).items():
+    for key, value in task.model_dump(exclude_unset=True).items():
         setattr(db_task, key, value)
     db.commit()
     db.refresh(db_task)
@@ -332,7 +332,7 @@ def create_subtask(db: Session, subtask: schemas.SubtaskCreate):
     Returns:
         models.Subtask: Subtarea creada.
     """
-    db_subtask = models.Subtask(**subtask.dict())
+    db_subtask = models.Subtask(**subtask.model_dump())
     db.add(db_subtask)
     db.commit()
     db.refresh(db_subtask)
@@ -388,7 +388,7 @@ def update_subtask(db: Session, subtask_id: UUID, subtask: schemas.SubtaskUpdate
         models.Subtask: Subtarea actualizada.
     """
     db_subtask = get_subtask(db, subtask_id)
-    for key, value in subtask.dict(exclude_unset=True).items():
+    for key, value in subtask.model_dump(exclude_unset=True).items():
         setattr(db_subtask, key, value)
     db.commit()
     db.refresh(db_subtask)

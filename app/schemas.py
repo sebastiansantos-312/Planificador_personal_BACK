@@ -2,7 +2,7 @@
 schemas.py — Esquemas Pydantic para validación y serialización de datos.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
 from uuid import UUID
 from typing import Optional, Literal
@@ -35,8 +35,7 @@ class User(BaseModel):
     created_at: Optional[datetime] = None
     daily_limit_minutes: Optional[int] = 360
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── SUBJECT ─────────────────────────────────────────────────────────────────
@@ -59,8 +58,7 @@ class Subject(BaseModel):
     user_id: UUID
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── TASK ────────────────────────────────────────────────────────────────────
@@ -106,8 +104,7 @@ class Task(BaseModel):
     postpone_note: Optional[str] = None                          # ← Sprint 4
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── SUBTASK ─────────────────────────────────────────────────────────────────
@@ -141,8 +138,7 @@ class Subtask(BaseModel):
     postpone_note: Optional[str] = None
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ─── VARIANTES POR EMAIL ─────────────────────────────────────────────────────
